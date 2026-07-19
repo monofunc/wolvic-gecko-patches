@@ -1,0 +1,61 @@
+From c24a5a227fdcf740533286048ecd7edefdf3f709 Mon Sep 17 00:00:00 2001
+From: Sergio Villar Senin <svillar@igalia.com>
+Date: Thu, 5 Oct 2023 18:49:20 +0200
+Subject: [PATCH] [webxr] Support Quest3 controllers
+
+---
+ dom/vr/XRInputSource.cpp              | 10 ++++++++++
+ gfx/vr/VRDisplayClient.cpp            |  3 ++-
+ gfx/vr/external_api/moz_external_vr.h |  1 +
+ 3 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/dom/vr/XRInputSource.cpp b/dom/vr/XRInputSource.cpp
+index 608efc2f6478..08a72f0c3908 100644
+--- a/dom/vr/XRInputSource.cpp
++++ b/dom/vr/XRInputSource.cpp
+@@ -114,6 +114,16 @@ nsTArray<nsString> GetInputSourceProfile(gfx::VRControllerType aType) {
+       id.AssignLiteral("generic-trigger-squeeze-thumbstick");
+       profile.AppendElement(id);
+       break;
++    case gfx::VRControllerType::MetaQuest3:
++      id.AssignLiteral("meta-quest-touch-plus");
++      profile.AppendElement(id);
++      id.AssignLiteral("oculus-touch-v3");
++      profile.AppendElement(id);
++      id.AssignLiteral("oculus-touch");
++      profile.AppendElement(id);
++      id.AssignLiteral("generic-trigger-squeeze-thumbstick");
++      profile.AppendElement(id);
++      break;
+     default:
+       NS_WARNING("Unsupported XR input source profile.");
+       break;
+diff --git a/gfx/vr/VRDisplayClient.cpp b/gfx/vr/VRDisplayClient.cpp
+index 08f0cfac0c1d..9b5d28538243 100644
+--- a/gfx/vr/VRDisplayClient.cpp
++++ b/gfx/vr/VRDisplayClient.cpp
+@@ -327,7 +327,8 @@ void VRDisplayClient::GamepadMappingForWebVR(
+       aControllerState.numAxes = 2;
+       break;
+     case VRControllerType::OculusTouch2:
+-    case VRControllerType::OculusTouch3: {
++    case VRControllerType::OculusTouch3:
++    case VRControllerType::MetaQuest3: {
+       aControllerState.buttonPressed =
+           ShiftButtonBitForNewSlot(0, 3) | ShiftButtonBitForNewSlot(1, 0) |
+           ShiftButtonBitForNewSlot(2, 1) | ShiftButtonBitForNewSlot(3, 4) |
+diff --git a/gfx/vr/external_api/moz_external_vr.h b/gfx/vr/external_api/moz_external_vr.h
+index 3b8494844557..1c7b6e6f4b7b 100644
+--- a/gfx/vr/external_api/moz_external_vr.h
++++ b/gfx/vr/external_api/moz_external_vr.h
+@@ -182,6 +182,7 @@ enum class VRControllerType : uint8_t {
+   PicoG2,
+   PicoNeo2,
+   Pico4,
++  MetaQuest3,
+   _end
+ };
+ 
+-- 
+2.54.0 (Apple Git-157)
+
