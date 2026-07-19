@@ -1,0 +1,24 @@
+From b8bc417bd1063051aaa2c39017a3256213681398 Mon Sep 17 00:00:00 2001
+From: Imanol Fernandez <ifernandez@igalia.com>
+Date: Fri, 28 Jan 2022 15:52:00 +0100
+Subject: [PATCH] Disable ogg sandboxing
+
+---
+ toolkit/moz.configure | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/toolkit/moz.configure b/toolkit/moz.configure
+index 593f8b9b9cfc..e50fd5045c48 100644
+--- a/toolkit/moz.configure
++++ b/toolkit/moz.configure
+@@ -2817,7 +2817,6 @@ set_define("MOZ_HAS_REMOTE", has_remote)
+ def wasm_sandboxing_libraries():
+     return (
+         "graphite",
+-        "ogg",
+         "hunspell",
+         "expat",
+         "woff2",
+-- 
+2.54.0 (Apple Git-157)
+

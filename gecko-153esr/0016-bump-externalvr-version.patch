@@ -1,0 +1,27 @@
+From d804b72fed0def945d8d08249b94d1bc00a1e8d6 Mon Sep 17 00:00:00 2001
+From: Sergio Villar Senin <svillar@igalia.com>
+Date: Mon, 2 Dec 2024 09:45:06 +0100
+Subject: [PATCH] bump externalvr version
+
+---
+ gfx/vr/external_api/moz_external_vr.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gfx/vr/external_api/moz_external_vr.h b/gfx/vr/external_api/moz_external_vr.h
+index 8f46c0e0a287..3b272fb6df86 100644
+--- a/gfx/vr/external_api/moz_external_vr.h
++++ b/gfx/vr/external_api/moz_external_vr.h
+@@ -53,8 +53,8 @@ namespace gfx {
+ // and mapped files if we have both release and nightlies
+ // running at the same time? Or...what if we have multiple
+ // release builds running on same machine? (Bug 1563232)
+-#define SHMEM_VERSION "0.0.12"
+-static const int32_t kVRExternalVersion = 20;
++#define SHMEM_VERSION "0.0.13"
++static const int32_t kVRExternalVersion = 21;
+ 
+ // We assign VR presentations to groups with a bitmask.
+ // Currently, we will only display either content or chrome.
+-- 
+2.54.0 (Apple Git-157)
+

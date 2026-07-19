@@ -1,0 +1,142 @@
+From 720e9c1eb800ac40f8771e2a60b2fd1fa60be4eb Mon Sep 17 00:00:00 2001
+From: Sergio Villar Senin <svillar@igalia.com>
+Date: Tue, 27 Aug 2024 18:02:41 +0200
+Subject: [PATCH] patch 15
+---
+ dom/vr/VRServiceTest.cpp              |  2 +-
+ gfx/vr/external_api/moz_external_vr.h | 15 ++++++++++-----
+ gfx/vr/ipc/VRMessageUtils.h           |  2 +-
+ gfx/vr/service/OSVRSession.cpp        |  2 +-
+ gfx/vr/service/OculusSession.cpp      |  2 +-
+ gfx/vr/service/OpenVRSession.cpp      |  2 +-
+ 6 files changed, 15 insertions(+), 10 deletions(-)
+
+diff --git a/dom/vr/VRServiceTest.cpp b/dom/vr/VRServiceTest.cpp
+index 2a0c72cadf78..b635a08b4d57 100644
+--- a/dom/vr/VRServiceTest.cpp
++++ b/dom/vr/VRServiceTest.cpp
+@@ -75,7 +75,7 @@ void VRMockDisplay::Create() {
+                           VRDisplayCapabilityFlags::Cap_StageParameters |
+                           VRDisplayCapabilityFlags::Cap_MountDetection |
+                           VRDisplayCapabilityFlags::Cap_ImmersiveVR;
+-  state.blendMode = VRDisplayBlendMode::Opaque;
++  state.blendModes[0] = VRDisplayBlendMode::Opaque;
+ 
+   // 1836 x 2040 resolution is arbitrary and can be overridden.
+   // This default resolution was chosen to be within range of a
+diff --git a/gfx/vr/external_api/moz_external_vr.h b/gfx/vr/external_api/moz_external_vr.h
+index e624d43e9fa1..8f46c0e0a287 100644
+--- a/gfx/vr/external_api/moz_external_vr.h
++++ b/gfx/vr/external_api/moz_external_vr.h
+@@ -54,7 +54,7 @@ namespace gfx {
+ // running at the same time? Or...what if we have multiple
+ // release builds running on same machine? (Bug 1563232)
+ #define SHMEM_VERSION "0.0.12"
+-static const int32_t kVRExternalVersion = 19;
++static const int32_t kVRExternalVersion = 20;
+ 
+ // We assign VR presentations to groups with a bitmask.
+ // Currently, we will only display either content or chrome.
+@@ -74,6 +74,7 @@ static const int kVRControllerMaxButtons = 64;
+ static const int kVRControllerMaxAxis = 16;
+ static const int kVRLayerMaxCount = 8;
+ static const int kVRHapticsMaxCount = 32;
++static const int kVRBlendModesMaxLen = 3;
+ 
+ #if defined(__ANDROID__)
+ typedef uint64_t VRLayerTextureHandle;
+@@ -198,7 +199,9 @@ enum class GamepadMappingType : uint8_t { _empty, Standard, XRStandard };
+ 
+ // -
+ 
+-enum class VRDisplayBlendMode : uint8_t { Opaque, Additive, AlphaBlend };
++enum class VRDisplayBlendMode : uint8_t { _empty, Opaque, Additive, AlphaBlend };
++
++enum class ImmersiveXRSessionType : uint8_t { VR, AR };
+ 
+ // -
+ 
+@@ -403,8 +406,8 @@ struct VRDisplayState {
+   //                             ('B'<<8) + 'A').
+   uint64_t eightCC;
+   VRDisplayCapabilityFlags capabilityFlags;
+-  VRDisplayBlendMode blendMode;
+-  std::array<uint8_t, 5> _padding2;
++  std::array<VRDisplayBlendMode, kVRBlendModesMaxLen> blendModes;
++  std::array<uint8_t, 5 - kVRBlendModesMaxLen + 1> _padding2;
+   std::array<VRFieldOfView, VRDisplayState::NumEyes> eyeFOV;
+   static_assert(std::is_trivial_v<VRFieldOfView>);
+   std::array<std::array<float, 16>, VRDisplayState::NumEyes> eyeTransform;
+@@ -432,7 +435,7 @@ struct VRDisplayState {
+ #ifdef MOZILLA_INTERNAL_API
+   auto MutTiedFields() {
+     return std::tie(shutdown, _padding1, minRestartInterval, displayName,
+-                    eightCC, capabilityFlags, blendMode, _padding2, eyeFOV,
++                    eightCC, capabilityFlags, blendModes, _padding2, eyeFOV,
+                     eyeTransform, eyeResolution, nativeFramebufferScaleFactor,
+                     suppressFrames, isConnected, isMounted, _padding3,
+                     stageSize, sittingToStandingTransform, lastSubmittedFrameId,
+@@ -627,6 +630,8 @@ struct VRBrowserState {
+   bool navigationTransitionActive;
+   VRLayerState layerState[kVRLayerMaxCount];
+   VRHapticState hapticState[kVRHapticsMaxCount];
++  VRDisplayBlendMode blendMode;
++  ImmersiveXRSessionType sessionType;
+ 
+ #ifdef MOZILLA_INTERNAL_API
+   void Clear() { memset(this, 0, sizeof(VRBrowserState)); }
+diff --git a/gfx/vr/ipc/VRMessageUtils.h b/gfx/vr/ipc/VRMessageUtils.h
+index a4e669f74cce..c57fc29f2a1e 100644
+--- a/gfx/vr/ipc/VRMessageUtils.h
++++ b/gfx/vr/ipc/VRMessageUtils.h
+@@ -68,7 +68,7 @@ template <>
+ struct ParamTraits<mozilla::gfx::VRDisplayBlendMode>
+     : public ContiguousEnumSerializerInclusive<
+           mozilla::gfx::VRDisplayBlendMode,
+-          mozilla::gfx::VRDisplayBlendMode::Opaque,
++          mozilla::gfx::VRDisplayBlendMode::_empty,
+           mozilla::gfx::VRDisplayBlendMode::AlphaBlend> {};
+ 
+ // -
+diff --git a/gfx/vr/service/OSVRSession.cpp b/gfx/vr/service/OSVRSession.cpp
+index e5f3896fdac1..708666f5029d 100644
+--- a/gfx/vr/service/OSVRSession.cpp
++++ b/gfx/vr/service/OSVRSession.cpp
+@@ -358,7 +358,7 @@ bool OSVRSession::InitState(mozilla::gfx::VRSystemState& aSystemState) {
+                                  (int)VRDisplayCapabilityFlags::Cap_Present |
+                                  (int)
+                                      VRDisplayCapabilityFlags::Cap_ImmersiveVR);
+-  state.blendMode = VRDisplayBlendMode::Opaque;
++  state.blendModes[0] = VRDisplayBlendMode::Opaque;
+   state.reportsDroppedFrames = false;
+ 
+   // XXX OSVR display topology allows for more than one viewer
+diff --git a/gfx/vr/service/OculusSession.cpp b/gfx/vr/service/OculusSession.cpp
+index 82bf81974c52..13d59ab195e2 100644
+--- a/gfx/vr/service/OculusSession.cpp
++++ b/gfx/vr/service/OculusSession.cpp
+@@ -1028,7 +1028,7 @@ bool OculusSession::InitState(VRSystemState& aSystemState) {
+   state.capabilityFlags |= VRDisplayCapabilityFlags::Cap_MountDetection;
+   state.capabilityFlags |= VRDisplayCapabilityFlags::Cap_Present;
+   state.capabilityFlags |= VRDisplayCapabilityFlags::Cap_ImmersiveVR;
+-  state.blendMode = VRDisplayBlendMode::Opaque;
++  state.blendModes[0] = VRDisplayBlendMode::Opaque;
+   state.reportsDroppedFrames = true;
+ 
+   mFOVPort[VRDisplayState::Eye_Left] = desc.DefaultEyeFov[ovrEye_Left];
+diff --git a/gfx/vr/service/OpenVRSession.cpp b/gfx/vr/service/OpenVRSession.cpp
+index 3ccf664db884..b8ebf870586e 100644
+--- a/gfx/vr/service/OpenVRSession.cpp
++++ b/gfx/vr/service/OpenVRSession.cpp
+@@ -713,7 +713,7 @@ bool OpenVRSession::InitState(VRSystemState& aSystemState) {
+                                      Cap_StageParameters |
+                                  (int)
+                                      VRDisplayCapabilityFlags::Cap_ImmersiveVR);
+-  state.blendMode = VRDisplayBlendMode::Opaque;
++  state.blendModes[0] = VRDisplayBlendMode::Opaque;
+   state.reportsDroppedFrames = true;
+ 
+   ::vr::ETrackedPropertyError err;
+-- 
+2.54.0 (Apple Git-157)
+

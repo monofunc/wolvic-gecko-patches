@@ -1,0 +1,62 @@
+From e5320dace270f6633a5ed47423e9fbe97a7c2e11 Mon Sep 17 00:00:00 2001
+From: Sergio Villar Senin <svillar@igalia.com>
+Date: Wed, 10 May 2023 19:23:53 +0200
+Subject: [PATCH] [webxr] Support Pico4 controllers
+
+Add support for the pico4 (Pico 4) input profile. As specified
+in the WebXR input profile[1] we're setting pico-4 and
+generic-trigger-squeeze-thumbstick as fallback profiles.
+
+Update the externalVR VRControllerType enum as well.
+
+[1] https://github.com/immersive-web/webxr-input-profiles/blob/main/packages/registry/profiles/pico/pico-4.json
+---
+ dom/vr/XRInputSource.cpp              | 6 ++++++
+ gfx/vr/VRDisplayClient.cpp            | 1 +
+ gfx/vr/external_api/moz_external_vr.h | 1 +
+ 3 files changed, 8 insertions(+)
+
+diff --git a/dom/vr/XRInputSource.cpp b/dom/vr/XRInputSource.cpp
+index 2b5a7de5ce7a..608efc2f6478 100644
+--- a/dom/vr/XRInputSource.cpp
++++ b/dom/vr/XRInputSource.cpp
+@@ -108,6 +108,12 @@ nsTArray<nsString> GetInputSourceProfile(gfx::VRControllerType aType) {
+       id.AssignLiteral("generic-trigger-squeeze-thumbstick");
+       profile.AppendElement(id);
+       break;
++    case gfx::VRControllerType::Pico4:
++      id.AssignLiteral("pico-4");
++      profile.AppendElement(id);
++      id.AssignLiteral("generic-trigger-squeeze-thumbstick");
++      profile.AppendElement(id);
++      break;
+     default:
+       NS_WARNING("Unsupported XR input source profile.");
+       break;
+diff --git a/gfx/vr/VRDisplayClient.cpp b/gfx/vr/VRDisplayClient.cpp
+index 3c3b1f976001..08f0cfac0c1d 100644
+--- a/gfx/vr/VRDisplayClient.cpp
++++ b/gfx/vr/VRDisplayClient.cpp
+@@ -409,6 +409,7 @@ void VRDisplayClient::GamepadMappingForWebVR(
+       aControllerState.numAxes = 2;
+       break;
+     case VRControllerType::PicoNeo2:
++    case VRControllerType::Pico4:
+       aControllerState.buttonPressed =
+           ShiftButtonBitForNewSlot(0, 3) | ShiftButtonBitForNewSlot(1, 0) |
+           ShiftButtonBitForNewSlot(2, 1) | ShiftButtonBitForNewSlot(3, 4) |
+diff --git a/gfx/vr/external_api/moz_external_vr.h b/gfx/vr/external_api/moz_external_vr.h
+index ee66d18faa5c..3b8494844557 100644
+--- a/gfx/vr/external_api/moz_external_vr.h
++++ b/gfx/vr/external_api/moz_external_vr.h
+@@ -181,6 +181,7 @@ enum class VRControllerType : uint8_t {
+   PicoGaze,
+   PicoG2,
+   PicoNeo2,
++  Pico4,
+   _end
+ };
+ 
+-- 
+2.54.0 (Apple Git-157)
+

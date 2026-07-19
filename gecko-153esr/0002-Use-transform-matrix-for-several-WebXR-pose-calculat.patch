@@ -1,0 +1,261 @@
+From 61bdaff823ee16065a91669f96b91822eb66e4e0 Mon Sep 17 00:00:00 2001
+From: Imanol Fernandez <ifernandez@igalia.com>
+Date: Fri, 28 Jan 2022 11:02:49 +0100
+Subject: [PATCH] Use transform matrix for several WebXR pose calculations
+
+---
+ dom/vr/XRBoundedReferenceSpace.cpp  | 18 +++++-------------
+ dom/vr/XRFrame.cpp                  | 15 +++------------
+ dom/vr/XRNativeOriginLocal.cpp      | 15 +--------------
+ dom/vr/XRNativeOriginLocalFloor.cpp |  4 ++--
+ dom/vr/XRReferenceSpace.cpp         | 18 +++++-------------
+ dom/vr/XRRigidTransform.cpp         |  4 ++++
+ dom/vr/XRRigidTransform.h           |  1 +
+ dom/vr/XRSpace.cpp                  | 29 ++++++++++-------------------
+ dom/vr/XRSpace.h                    |  6 ++----
+ 9 files changed, 33 insertions(+), 77 deletions(-)
+
+diff --git a/dom/vr/XRBoundedReferenceSpace.cpp b/dom/vr/XRBoundedReferenceSpace.cpp
+index f7a8f9b9abb5..d53338aa4e6f 100644
+--- a/dom/vr/XRBoundedReferenceSpace.cpp
++++ b/dom/vr/XRBoundedReferenceSpace.cpp
+@@ -49,22 +49,14 @@ void XRBoundedReferenceSpace::GetBoundsGeometry(
+ 
+ already_AddRefed<XRReferenceSpace>
+ XRBoundedReferenceSpace::GetOffsetReferenceSpace(
+-    const XRRigidTransform& aOriginOffset) {
++    const XRRigidTransform& aOffsetTransform) {
+   RefPtr<XRBoundedReferenceSpace> offsetReferenceSpace =
+       new XRBoundedReferenceSpace(GetParentObject(), mSession, mNativeOrigin);
+ 
+-  // https://immersive-web.github.io/webxr/#multiply-transforms
+-  // An XRRigidTransform is essentially a rotation followed by a translation
+-  gfx::QuaternionDouble otherOrientation = aOriginOffset.RawOrientation();
+-  // The resulting rotation is the two combined
+-  offsetReferenceSpace->mOriginOffsetOrientation =
+-      mOriginOffsetOrientation * otherOrientation;
+-  // We first apply the rotation of aOriginOffset to
+-  // mOriginOffsetPosition offset, then translate by the offset of
+-  // aOriginOffset
+-  offsetReferenceSpace->mOriginOffsetPosition =
+-      otherOrientation.RotatePoint(mOriginOffsetPosition) +
+-      aOriginOffset.RawPosition();
++  // https://immersive-web.github.io/webxr/#dom-xrreferencespace-getoffsetreferencespace
++  // Set offsetSpace’s origin offset to the result of multiplying base’s origin offset
++  // by originOffset in the relevant realm of base.
++  offsetReferenceSpace->mOriginOffset = mOriginOffset * aOffsetTransform.RawTransform();
+ 
+   return offsetReferenceSpace.forget();
+ }
+diff --git a/dom/vr/XRFrame.cpp b/dom/vr/XRFrame.cpp
+index 8407e68fce23..d36de6a9807a 100644
+--- a/dom/vr/XRFrame.cpp
++++ b/dom/vr/XRFrame.cpp
+@@ -80,12 +80,7 @@ already_AddRefed<XRViewerPose> XRFrame::GetViewerPose(
+     headTransform.SetRotationFromQuaternion(viewerOrientation);
+     headTransform.PostTranslate(viewerPosition);
+ 
+-    gfx::Matrix4x4Double originTransform;
+-    originTransform.SetRotationFromQuaternion(
+-        aReferenceSpace.GetEffectiveOriginOrientation().Inverse());
+-    originTransform.PreTranslate(-aReferenceSpace.GetEffectiveOriginPosition());
+-
+-    headTransform *= originTransform;
++    headTransform *= aReferenceSpace.GetEffectiveOriginTransform().Inverse();
+ 
+     viewerPose = mSession->PooledViewerPose(headTransform, emulatedPosition);
+ 
+@@ -155,13 +150,9 @@ already_AddRefed<XRPose> XRFrame::GetPose(const XRSpace& aSpace,
+   // TODO (Bug 1616393) - Check if poses must be limited:
+   // https://immersive-web.github.io/webxr/#poses-must-be-limited
+ 
+-  const bool emulatedPosition = aSpace.IsPositionEmulated();
+-  gfx::Matrix4x4Double base;
+-  base.SetRotationFromQuaternion(
+-      aBaseSpace.GetEffectiveOriginOrientation().Inverse());
+-  base.PreTranslate(-aBaseSpace.GetEffectiveOriginPosition());
++  const bool emulatedPosition = aSpace.IsPositionEmulated() || aBaseSpace.IsPositionEmulated();
+ 
+-  gfx::Matrix4x4Double matrix = aSpace.GetEffectiveOriginTransform() * base;
++  gfx::Matrix4x4Double matrix = aSpace.GetEffectiveOriginTransform() * aBaseSpace.GetEffectiveOriginTransform().Inverse();
+ 
+   RefPtr<XRRigidTransform> transform = new XRRigidTransform(mParent, matrix);
+   RefPtr<XRPose> pose = new XRPose(mParent, transform, emulatedPosition);
+diff --git a/dom/vr/XRNativeOriginLocal.cpp b/dom/vr/XRNativeOriginLocal.cpp
+index 2a2b1e8873d9..b30e23e1125f 100644
+--- a/dom/vr/XRNativeOriginLocal.cpp
++++ b/dom/vr/XRNativeOriginLocal.cpp
+@@ -14,20 +14,7 @@ XRNativeOriginLocal::XRNativeOriginLocal(gfx::VRDisplayClient* aDisplay)
+ }
+ 
+ gfx::PointDouble3D XRNativeOriginLocal::GetPosition() {
+-  // Keep returning {0,0,0} until a position can be found
+-  if (!mInitialPositionValid) {
+-    const gfx::VRHMDSensorState& sensorState = mDisplay->GetSensorState();
+-    gfx::PointDouble3D origin;
+-    if (sensorState.flags & gfx::VRDisplayCapabilityFlags::Cap_Position ||
+-        sensorState.flags &
+-            gfx::VRDisplayCapabilityFlags::Cap_PositionEmulated) {
+-      mInitialPosition.x = sensorState.pose.position[0];
+-      mInitialPosition.y = sensorState.pose.position[1];
+-      mInitialPosition.z = sensorState.pose.position[2];
+-      mInitialPositionValid = true;
+-    }
+-  }
+-  return mInitialPosition;
++  return { };
+ }
+ 
+ }  // namespace mozilla::dom
+diff --git a/dom/vr/XRNativeOriginLocalFloor.cpp b/dom/vr/XRNativeOriginLocalFloor.cpp
+index e656802be719..0dffdeac0828 100644
+--- a/dom/vr/XRNativeOriginLocalFloor.cpp
++++ b/dom/vr/XRNativeOriginLocalFloor.cpp
+@@ -28,9 +28,9 @@ gfx::PointDouble3D XRNativeOriginLocalFloor::GetPosition() {
+       mDisplay->GetDisplayInfo().GetSittingToStandingTransform();
+   if (!mInitialPositionValid || standing != mStandingTransform) {
+     const gfx::VRHMDSensorState& sensorState = mDisplay->GetSensorState();
+-    mInitialPosition.x = sensorState.pose.position[0];
++    mInitialPosition.x = 0;
+     mInitialPosition.y = -mFloorRandom - standing._42;
+-    mInitialPosition.z = sensorState.pose.position[2];
++    mInitialPosition.z = 0;
+     mInitialPositionValid = true;
+     mStandingTransform = standing;
+   }
+diff --git a/dom/vr/XRReferenceSpace.cpp b/dom/vr/XRReferenceSpace.cpp
+index 6223f8e99528..a6f0d28e8a8b 100644
+--- a/dom/vr/XRReferenceSpace.cpp
++++ b/dom/vr/XRReferenceSpace.cpp
+@@ -16,22 +16,14 @@ XRReferenceSpace::XRReferenceSpace(nsIGlobalObject* aParent,
+     : XRSpace(aParent, aSession, aNativeOrigin), mType(aType) {}
+ 
+ already_AddRefed<XRReferenceSpace> XRReferenceSpace::GetOffsetReferenceSpace(
+-    const XRRigidTransform& aOriginOffset) {
++    const XRRigidTransform& aOffsetTransform) {
+   RefPtr<XRReferenceSpace> offsetReferenceSpace =
+       new XRReferenceSpace(GetParentObject(), mSession, mNativeOrigin, mType);
+ 
+-  // https://immersive-web.github.io/webxr/#multiply-transforms
+-  // An XRRigidTransform is essentially a rotation followed by a translation
+-  gfx::QuaternionDouble otherOrientation = aOriginOffset.RawOrientation();
+-  // The resulting rotation is the two combined
+-  offsetReferenceSpace->mOriginOffsetOrientation =
+-      mOriginOffsetOrientation * otherOrientation;
+-  // We first apply the rotation of aOriginOffset to
+-  // mOriginOffsetPosition offset, then translate by the offset of
+-  // aOriginOffset
+-  offsetReferenceSpace->mOriginOffsetPosition =
+-      otherOrientation.RotatePoint(mOriginOffsetPosition) +
+-      aOriginOffset.RawPosition();
++  // https://immersive-web.github.io/webxr/#dom-xrreferencespace-getoffsetreferencespace
++  // Set offsetSpace’s origin offset to the result of multiplying base’s origin offset by
++  // originOffset in the relevant realm of base.
++  offsetReferenceSpace->mOriginOffset = mOriginOffset * aOffsetTransform.RawTransform();
+ 
+   return offsetReferenceSpace.forget();
+ }
+diff --git a/dom/vr/XRRigidTransform.cpp b/dom/vr/XRRigidTransform.cpp
+index d2b12a985729..dea61422b426 100644
+--- a/dom/vr/XRRigidTransform.cpp
++++ b/dom/vr/XRRigidTransform.cpp
+@@ -94,6 +94,10 @@ gfx::PointDouble3D XRRigidTransform::RawPosition() const {
+   return mRawPosition;
+ }
+ 
++gfx::Matrix4x4Double XRRigidTransform::RawTransform() const {
++  return mRawTransformMatrix;
++}
++
+ void XRRigidTransform::Update(const gfx::PointDouble3D& aPosition,
+                               const gfx::QuaternionDouble& aOrientation) {
+   mNeedsUpdate = true;
+diff --git a/dom/vr/XRRigidTransform.h b/dom/vr/XRRigidTransform.h
+index f3bfa1b810cf..3272afedea72 100644
+--- a/dom/vr/XRRigidTransform.h
++++ b/dom/vr/XRRigidTransform.h
+@@ -29,6 +29,7 @@ class XRRigidTransform final : public nsWrapperCache {
+   XRRigidTransform& operator=(const XRRigidTransform& aOther);
+   gfx::QuaternionDouble RawOrientation() const;
+   gfx::PointDouble3D RawPosition() const;
++  gfx::Matrix4x4Double RawTransform() const;
+   void Update(const gfx::PointDouble3D& aPosition,
+               const gfx::QuaternionDouble& aOrientation);
+   void Update(const gfx::Matrix4x4Double& aTransform);
+diff --git a/dom/vr/XRSpace.cpp b/dom/vr/XRSpace.cpp
+index 192724ff61c8..1cb66293a75d 100644
+--- a/dom/vr/XRSpace.cpp
++++ b/dom/vr/XRSpace.cpp
+@@ -27,9 +27,7 @@ XRSpace::XRSpace(nsIGlobalObject* aParent, XRSession* aSession,
+                  XRNativeOrigin* aNativeOrigin)
+     : DOMEventTargetHelper(aParent),
+       mSession(aSession),
+-      mNativeOrigin(aNativeOrigin),
+-      mOriginOffsetPosition(0.0f, 0.0f, 0.0f),
+-      mOriginOffsetOrientation(0.0f, 0.0f, 0.0f, 1.0f) {}
++      mNativeOrigin(aNativeOrigin) {}
+ 
+ JSObject* XRSpace::WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) {
+@@ -38,25 +36,18 @@ JSObject* XRSpace::WrapObject(JSContext* aCx,
+ 
+ XRSession* XRSpace::GetSession() const { return mSession; }
+ 
+-gfx::QuaternionDouble XRSpace::GetEffectiveOriginOrientation() const {
+-  gfx::QuaternionDouble orientation =
+-      mNativeOrigin->GetOrientation() * mOriginOffsetOrientation;
+-  return orientation;
+-}
+-
+-gfx::PointDouble3D XRSpace::GetEffectiveOriginPosition() const {
+-  gfx::PointDouble3D position;
+-  position = mNativeOrigin->GetPosition();
+-  position = mOriginOffsetOrientation.RotatePoint(position);
+-  position += mOriginOffsetPosition;
+-  return position;
++gfx::Matrix4x4Double XRSpace::GetNativeOriginTransform() const {
++  if (!mNativeOrigin) {
++    return {};
++  }
++  gfx::Matrix4x4Double transform;
++  transform.SetRotationFromQuaternion(mNativeOrigin->GetOrientation());
++  transform.PostTranslate(mNativeOrigin->GetPosition());
++  return transform;
+ }
+ 
+ gfx::Matrix4x4Double XRSpace::GetEffectiveOriginTransform() const {
+-  gfx::Matrix4x4Double transform;
+-  transform.SetRotationFromQuaternion(GetEffectiveOriginOrientation());
+-  transform.PostTranslate(GetEffectiveOriginPosition());
+-  return transform;
++  return GetNativeOriginTransform() * mOriginOffset;
+ }
+ 
+ bool XRSpace::IsPositionEmulated() const {
+diff --git a/dom/vr/XRSpace.h b/dom/vr/XRSpace.h
+index 5f44231cf800..34d4984e0cd5 100644
+--- a/dom/vr/XRSpace.h
++++ b/dom/vr/XRSpace.h
+@@ -31,8 +31,7 @@ class XRSpace : public DOMEventTargetHelper {
+   XRNativeOrigin* GetNativeOrigin() const;
+ 
+   // Non webIDL Members
+-  gfx::QuaternionDouble GetEffectiveOriginOrientation() const;
+-  gfx::PointDouble3D GetEffectiveOriginPosition() const;
++  gfx::Matrix4x4Double GetNativeOriginTransform() const;
+   gfx::Matrix4x4Double GetEffectiveOriginTransform() const;
+   virtual bool IsPositionEmulated() const;
+ 
+@@ -44,8 +43,7 @@ class XRSpace : public DOMEventTargetHelper {
+ 
+   // https://immersive-web.github.io/webxr/#xrspace-origin-offset
+   // Origin Offset, represented as a rigid transform
+-  gfx::PointDouble3D mOriginOffsetPosition;
+-  gfx::QuaternionDouble mOriginOffsetOrientation;
++  gfx::Matrix4x4Double mOriginOffset;
+ };
+ 
+ }  // namespace mozilla::dom
+-- 
+2.54.0 (Apple Git-157)
+

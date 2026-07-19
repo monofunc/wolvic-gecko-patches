@@ -1,0 +1,25 @@
+From 92af0c655bef17f8d7cd53a0fe69dbea49be69c9 Mon Sep 17 00:00:00 2001
+From: Sergio Villar Senin <svillar@igalia.com>
+Date: Mon, 2 Dec 2024 09:45:06 +0100
+Subject: [PATCH] [webxr] surface colorspace
+
+---
+ gfx/gl/SharedSurfaceEGL.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/gfx/gl/SharedSurfaceEGL.h b/gfx/gl/SharedSurfaceEGL.h
+index f13bf69c7a59..514982c0db83 100644
+--- a/gfx/gl/SharedSurfaceEGL.h
++++ b/gfx/gl/SharedSurfaceEGL.h
+@@ -116,6 +116,8 @@ class SurfaceFactory_SurfaceTexture final : public SurfaceFactory {
+  public:
+   explicit SurfaceFactory_SurfaceTexture(GLContext&);
+ 
++  bool SupportsCspaces() const override { return true; }
++
+   virtual UniquePtr<SharedSurface> CreateSharedImpl(
+       const SharedSurfaceDesc& desc) override {
+     return SharedSurface_SurfaceTexture::Create(desc);
+-- 
+2.54.0 (Apple Git-157)
+
